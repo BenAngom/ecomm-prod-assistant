@@ -3,6 +3,7 @@ from bs4 import BeautifulSoup
 import re
 import csv
 import os
+import requests
 
 
 class FlipkartScraper:
@@ -36,15 +37,13 @@ class FlipkartScraper:
 
             soup = BeautifulSoup(page.content(), "html.parser")
 
-            #items = soup.select("div[data-id]")[:max_products]
-            
             items = soup.select("div[data-id]:has(a[href*='/p/'])")[:max_products]
             
 
             print("Products found:", len(items))
 
             for item in items:
-
+                
                 try:
                     # product link
                     link_el = item.select_one("a[href*='/p/']")
@@ -59,16 +58,25 @@ class FlipkartScraper:
                     product_id = match[0] if match else "N/A"
 
                     # title (text inside the link)
-                    title = link_el.get_text(strip=True)
+                    
+                    title_text = link_el.get_text(" ", strip=True)
+
+                    # remove UI labels
+                    title_text = re.sub(r"(Add to Compare|Bestseller)", "", title_text)
+
+                    # stop at rating or price
+                    title = re.split(r"\b[1-5]\.[0-9]\b|₹", title_text)[0].strip()
 
                     # price (search inside product card)
                     price_el = item.find(string=re.compile("₹"))
                     price = price_el.strip() if price_el else "N/A"
 
                     # rating
-                    rating_el = item.select_one("div[aria-label*='star']")
-                    rating = rating_el.get_text(strip=True) if rating_el else "N/A"
-
+                    rating = "N/A"
+                    rating_match = item.find(string=re.compile(r"\b[1-5]\.[0-9]\b"))
+                    if rating_match:
+                        rating = rating_match.strip()
+                        
                     # reviews
                     reviews_el = item.find(string=re.compile("Reviews"))
                     if reviews_el:
@@ -79,7 +87,7 @@ class FlipkartScraper:
 
                     top_reviews = self.get_top_reviews(page, product_link, review_count)
 
-                    print("Parsed:", title, price)
+                    print("Parsed:", title, price , rating, top_reviews, total_reviews)
 
                     products.append([
                         product_id,
@@ -96,29 +104,64 @@ class FlipkartScraper:
             browser.close()
 
         return products
-
+    
+ 
 
     def get_top_reviews(self, page, product_link, count=2):
 
         try:
+            match = re.search(r"/p/(itm[0-9A-Za-z]+)", product_link)
+            if not match:
+                return ["No reviews found"]
 
-            page.goto(product_link)
-            page.wait_for_timeout(3000)
+            product_id = match.group(1)
 
-            soup = BeautifulSoup(page.content(), "html.parser")
+            url = f"https://www.flipkart.com/api/3/product/reviews?pid={product_id}&count={count}"
 
-            review_elements = soup.select("div.t-ZTKy")[:count]
+            headers = {
+                "User-Agent": "Mozilla/5.0",
+                "Accept": "application/json"
+            }
+
+            res = requests.get(url, headers=headers)
+
+            data = res.json()
 
             reviews = []
 
-            for r in review_elements:
-                reviews.append(r.get_text(strip=True))
+            if "reviews" in data:
+                for r in data["reviews"][:count]:
+                    reviews.append(r["text"])
 
             return reviews if reviews else ["No reviews found"]
 
         except Exception as e:
-            print("Review scraping failed:", e)
-            return []
+            print("Review API failed:", e)
+            return ["No reviews found"]
+    
+
+
+    # def get_top_reviews(self, page, product_link, count=2):
+
+    #     try:
+
+    #         page.goto(product_link)
+    #         page.wait_for_timeout(3000)
+
+    #         soup = BeautifulSoup(page.content(), "html.parser")
+
+    #         review_elements = soup.select("div.t-ZTKy")[:count]
+
+    #         reviews = []
+
+    #         for r in review_elements:
+    #             reviews.append(r.get_text(strip=True))
+
+    #         return reviews if reviews else ["No reviews found"]
+
+    #     except Exception as e:
+    #         print("Review scraping failed:", e)
+    #         return []
 
 
     def save_to_csv(self, data, filename="product_reviews.csv"):
