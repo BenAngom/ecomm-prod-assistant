@@ -54,12 +54,29 @@ class DataIngestion:
 
         return csv_path
 
+    # def _load_csv(self):
+    #     """
+    #     Load product data from CSV.
+    #     """
+    #     df = pd.read_csv(self.csv_path)
+    #     expected_columns = {'product_id','product_title', 'rating', 'total_reviews','price', 'top_reviews'}
+
+    #     if not expected_columns.issubset(set(df.columns)):
+    #         raise ValueError(f"CSV must contain columns: {expected_columns}")
+
+    #     return df
+    
     def _load_csv(self):
         """
         Load product data from CSV.
         """
         df = pd.read_csv(self.csv_path)
-        expected_columns = {'product_id','product_title', 'rating', 'total_reviews','price', 'top_reviews'}
+
+        # FIX: remove NaN / Inf values
+        df = df.fillna("")
+        df = df.replace([float("inf"), float("-inf")], "")
+
+        expected_columns = {'product_id','product_title','rating','total_reviews','price','top_reviews'}
 
         if not expected_columns.issubset(set(df.columns)):
             raise ValueError(f"CSV must contain columns: {expected_columns}")
@@ -85,14 +102,25 @@ class DataIngestion:
 
         documents = []
         for entry in product_list:
+            # metadata = {
+            #         "product_id": entry["product_id"],
+            #         "product_title": entry["product_title"],
+            #         "rating": entry["rating"],
+            #         "total_reviews": entry["total_reviews"],
+            #         "price": entry["price"]
+            # }
             metadata = {
-                    "product_id": entry["product_id"],
-                    "product_title": entry["product_title"],
-                    "rating": entry["rating"],
-                    "total_reviews": entry["total_reviews"],
-                    "price": entry["price"]
+                    "product_id": str(entry["product_id"]),
+                    "product_title": str(entry["product_title"]),
+                    "rating": str(entry["rating"]),
+                    "total_reviews": str(entry["total_reviews"]),
+                    "price": str(entry["price"])
             }
-            doc = Document(page_content=entry["top_reviews"], metadata=metadata)
+            
+            #doc = Document(page_content=entry["top_reviews"], metadata=metadata)
+            
+            doc = Document(page_content=str(entry["top_reviews"]), metadata=metadata)
+            
             documents.append(doc)
 
         print(f"Transformed {len(documents)} documents.")
