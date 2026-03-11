@@ -41,50 +41,134 @@ class AgenticRAG:
         self.app = self.workflow.compile(checkpointer=self.checkpointer)
 
     # ---------- Nodes ----------
+    # def _ai_assistant(self, state: AgentState):
+    #     print("--- CALL ASSISTANT ---")
+    #     messages = state["messages"]
+    #     last_message = messages[-1].content
+
+    #     if any(word in last_message.lower() for word in ["price", "review", "product"]):
+    #         return {"messages": [HumanMessage(content="TOOL: retriever")]}
+    #     else:
+    #         prompt = ChatPromptTemplate.from_template(
+    #             "You are a helpful assistant. Answer the user directly.\n\nQuestion: {question}\nAnswer:"
+    #         )
+    #         chain = prompt | self.llm | StrOutputParser()
+    #         response = chain.invoke({"question": last_message})
+    #         return {"messages": [HumanMessage(content=response)]}
+
+
     def _ai_assistant(self, state: AgentState):
         print("--- CALL ASSISTANT ---")
+
         messages = state["messages"]
-        last_message = messages[-1].content
+        question = messages[-1].content
 
-        if any(word in last_message.lower() for word in ["price", "review", "product"]):
+        router_prompt = ChatPromptTemplate.from_template(
+            """
+    You are a routing assistant.
+
+    Decide how to answer the user question.
+
+    If the question asks about:
+    - product information
+    - price
+    - reviews
+    - specifications
+    - availability
+
+    Respond ONLY with:
+
+    RETRIEVER
+
+    If the question is a general conversation like greetings or small talk,
+    respond ONLY with:
+
+    DIRECT
+
+    Question: {question}
+    """
+        )
+
+        chain = router_prompt | self.llm | StrOutputParser()
+        decision = chain.invoke({"question": question}).strip()
+
+        print("ROUTER DECISION:", decision)
+
+        if "RETRIEVER" in decision:
             return {"messages": [HumanMessage(content="TOOL: retriever")]}
-        else:
-            prompt = ChatPromptTemplate.from_template(
-                "You are a helpful assistant. Answer the user directly.\n\nQuestion: {question}\nAnswer:"
-            )
-            chain = prompt | self.llm | StrOutputParser()
-            response = chain.invoke({"question": last_message})
-            return {"messages": [HumanMessage(content=response)]}
 
+        # direct answer path
+        prompt = ChatPromptTemplate.from_template(
+            "You are a helpful assistant.\n\nQuestion: {question}\nAnswer:"
+        )
+        chain = prompt | self.llm | StrOutputParser()
+        response = chain.invoke({"question": question})
+
+        return {"messages": [HumanMessage(content=response)]}
     def _vector_retriever(self, state: AgentState):
         print("--- RETRIEVER (MCP) ---")
-        query = state["messages"][-1].content
+        #query = state["messages"][-1].content
+        query = state["messages"][0].content
         tool = next(t for t in self.mcp_tools if t.name == "get_product_info")
         result = asyncio.run(tool.ainvoke({"query": query}))
         context = result if result else "No data"
         return {"messages": [HumanMessage(content=context)]}
 
+    # def _web_search(self, state: AgentState):
+    #     print("--- WEB SEARCH (MCP) ---")
+    #     query = state["messages"][-1].content
+    #     tool = next(t for t in self.mcp_tools if t.name == "web_search")
+    #     result = asyncio.run(tool.ainvoke({"query": query}))
+    #     context = result if result else "No data from web"
+    #     return {"messages": [HumanMessage(content=context)]}
+
     def _web_search(self, state: AgentState):
         print("--- WEB SEARCH (MCP) ---")
-        query = state["messages"][-1].content
+        query = state["messages"][0].content
+
         tool = next(t for t in self.mcp_tools if t.name == "web_search")
         result = asyncio.run(tool.ainvoke({"query": query}))
+
         context = result if result else "No data from web"
         return {"messages": [HumanMessage(content=context)]}
 
+
+    # def _grade_documents(self, state: AgentState) -> Literal["generator", "rewriter"]:
+    #     print("--- GRADER ---")
+    #     question = state["messages"][0].content
+    #     docs = state["messages"][-1].content
+
+    #     prompt = PromptTemplate(
+    #         template="""You are a grader. Question: {question}\nDocs: {docs}\n
+    #         Are docs relevant to the question? Answer yes or no.""",
+    #         input_variables=["question", "docs"],
+    #     )
+    #     chain = prompt | self.llm | StrOutputParser()
+    #     score = chain.invoke({"question": question, "docs": docs})
+    #     return "generator" if "yes" in score.lower() else "rewriter"
+    
+    
     def _grade_documents(self, state: AgentState) -> Literal["generator", "rewriter"]:
         print("--- GRADER ---")
+
         question = state["messages"][0].content
         docs = state["messages"][-1].content
 
+        if docs == "No data" or docs.strip() == "":
+            return "rewriter"
+
         prompt = PromptTemplate(
-            template="""You are a grader. Question: {question}\nDocs: {docs}\n
-            Are docs relevant to the question? Answer yes or no.""",
+            template="""You are a grader. Question: {question}
+    Docs: {docs}
+
+    Are docs relevant to the question? Answer strictly yes or no.""",
             input_variables=["question", "docs"],
         )
+
         chain = prompt | self.llm | StrOutputParser()
         score = chain.invoke({"question": question, "docs": docs})
-        return "generator" if "yes" in score.lower() else "rewriter"
+
+        return "generator" if score.strip().lower() == "yes" else "rewriter"
 
     def _generate(self, state: AgentState):
         print("--- GENERATE ---")
@@ -158,5 +242,10 @@ class AgenticRAG:
 
 if __name__ == "__main__":
     rag_agent = AgenticRAG()
-    answer = rag_agent.run("What is the price of iPhone 16?")
+    #answer = rag_agent.run("What is the price of iPhone 16?")
+    
+    answer = rag_agent.run("What is the price of iPhone 17 pro max?")
+    
+    #answer = rag_agent.run("Samsung Galaxy S26 Ultra?")
+    
     print("\nFinal Answer:\n", answer)
