@@ -10,6 +10,7 @@ async def main():
             # ],  # absolute path
             "args": ["-m", "prod_assistant.mcp_servers.product_search_server"],
             "transport": "stdio",
+            "cwd": "/Users/benudhorangom/Documents/ecomm-prod-assistant"
         }
     })
 

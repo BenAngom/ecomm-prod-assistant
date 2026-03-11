@@ -1,5 +1,10 @@
+import sys
+from pathlib import Path
+
+sys.path.append(str(Path(__file__).resolve().parents[2]))
+
 from mcp.server.fastmcp import FastMCP
-from retriever.retrieval import Retriever  
+from prod_assistant.retriever.retrieval import Retriever
 from langchain_community.tools import DuckDuckGoSearchRun
 
 # Initialize MCP server
